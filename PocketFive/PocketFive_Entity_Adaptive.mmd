@@ -1,0 +1,46 @@
+---
+config:
+  layout: elk
+---
+erDiagram
+	direction TB
+	リクエスト {
+		string 質問テキスト  ""  
+		json 検索条件  ""  
+	}
+	ベクトルDB {
+		index ベクトル索引  ""  
+		int k_Top_k  ""  
+	}
+	埋め込みモデル {
+		vector 次元数_d  ""  
+		func 類似度（コサイン・内積）  ""  
+	}
+	ドキュメント {
+		text チャンク本文  ""  
+		meta 出典_ページ  ""  
+	}
+	再ランク_BERT_MMR {
+		float lambda_mult  ""  
+		int N_上位数  ""  
+	}
+	BERT {
+		model CrossEncoder  ""  
+	}
+	LLM {
+		prompt 質問と文脈  ""  
+		tokens 入出力トークン  ""  
+	}
+	レスポンス {
+		text 応答本文  ""  
+		cite 出典  ""  
+	}
+	リクエスト||--o{ベクトルDB:"検索要求"
+	リクエスト||--o{埋め込みモデル:"埋め込み生成依頼"
+	ベクトルDB}o--o{ドキュメント:"チャンクを保持"
+	埋め込みモデル||--o{ドキュメント:"埋め込み付与"
+	ベクトルDB||--o{再ランク_BERT_MMR:"Top-k候補を渡す"
+	再ランク_BERT_MMR||--||BERT:"CrossEncoder基盤"
+	再ランク_BERT_MMR||--o{LLM:"上位Nを渡す"
+	LLM||--||レスポンス:"応答生成"
+	リクエスト||--||レスポンス:"入出力対応"

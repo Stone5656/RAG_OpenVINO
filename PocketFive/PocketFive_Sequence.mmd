@@ -1,0 +1,24 @@
+sequenceDiagram
+  participant U as ユーザー
+  participant Q as クエリ整形
+  participant EM as Embedding Model
+  participant V as Vector DB
+  participant R as 再ランク(BERT/MMR)
+  participant C as 圧縮(任意)
+  participant L as LLM
+
+  U->>Q: 質問テキスト
+  Q->>EM: 質問の埋め込みを生成
+  EM-->>Q: 質問ベクトル q
+  Q->>V: qで近傍検索（Top-k）
+  V-->>Q: 候補文書 {d1..dk}
+  Q->>R: {d1..dk} を再ランク要求
+  R-->>Q: 上位N {d1..dN}
+  alt 圧縮あり
+    Q->>C: {d1..dN} と質問
+    C-->>Q: 抽出/要約スニペット
+  else 圧縮なし
+    Q-->>Q: 上位Nをそのまま使用
+  end
+  Q->>L: プロンプト（質問+文脈）
+  L-->>U: 応答テキスト（必要なら出典付き）

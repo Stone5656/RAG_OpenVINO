@@ -16,11 +16,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from datetime import datetime
 import json
-from typing import Iterable
 
 import streamlit as st
 
-from .session_state import ensure_defaults, snapshot
+from .session_state import ensure_defaults
 
 
 @dataclass

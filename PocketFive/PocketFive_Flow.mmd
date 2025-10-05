@@ -1,0 +1,18 @@
+flowchart TD
+  A[ユーザー質問] --> B[クエリ整形 / 前処理<br/>（句読点・同義語・否定語の扱い等）]
+  B --> C[埋め込み生成<br/>Embedding Model]
+  C --> D[類似検索 Top-k<br/>Vector DB（コサイン類似/内積）]
+  D --> E{再ランク}
+  E -->|MMR| E1[関連性×多様性で選定]
+  E -->|Cross-Encoder（BERT）| E2[質問×文書の結合入力で精密採点]
+  E1 --> F
+  E2 --> F
+  F[上位Nを採用] --> G{圧縮/抽出（任意）<br/>Contextual Compression}
+  G -->|抽出/要約| H[短い根拠スニペット]
+  G -->|スキップ| I[上位Nそのまま]
+  H --> J
+  I --> J
+  J[プロンプト組立<br/>（system+context+question）]
+  J --> K[LLM推論]
+  K --> L[応答生成（引用/根拠付き推奨）]
+  L --> M[ユーザーへ返答]

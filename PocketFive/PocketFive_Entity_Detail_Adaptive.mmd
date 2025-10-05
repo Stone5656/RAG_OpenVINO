@@ -1,0 +1,116 @@
+---
+config:
+  layout: elk
+---
+erDiagram
+  direction TB
+  リクエスト {
+    string 質問テキスト
+    json 検索条件
+    string ユーザーID
+    time タイムスタンプ
+  }
+  クエリ整形 {
+    bool 正規化有無
+    bool 同義語展開
+    bool 否定語処理
+    text 生成サブクエリ
+  }
+  トークナイザ {
+    string 語彙種別_BPE等
+    int 語彙サイズ
+  }
+  埋め込みモデル {
+    int 次元数_d
+    string 正規化_L2
+    string 類似度指標_コサイン_内積
+    string モデルID
+  }
+  ベクトルDB {
+    string インデックス方式
+    int k_Top_k
+    string 距離種別
+  }
+  ドキュメント {
+    text チャンク本文
+    string 出典
+    int ページ
+    string セクション
+    json メタデータ
+  }
+  再ランク_BERT_MMR {
+    float lambda_mult
+    int N_上位数
+    string 手法_MMR_CE
+  }
+  BERT {
+    string モデルID
+    bool CrossEncoder構成
+  }
+  圧縮器_Contextual {
+    string 手法_抽出_要約
+    float 圧縮率
+    bool エビデンス優先
+  }
+  プロンプト {
+    text systemメッセージ
+    text context文脈
+    text question質問
+  }
+  LLM {
+    string モデル名
+    int 入力トークン上限
+    int 出力トークン上限
+    string デコーディング手法
+  }
+  レスポンス {
+    text 応答本文
+    json 出典一覧
+    float 信頼度推定
+  }
+  キャッシュ {
+    string キー種別_クエリハッシュ等
+    json 値_埋め込み_応答
+    time TTL
+  }
+  監視_評価 {
+    float レイテンシ秒
+    int 入力トークン数
+    int 出力トークン数
+    float HitAtK
+    float 正答率_EM_F1
+  }
+  ログ {
+    time 時刻
+    string イベント
+    json 詳細
+  }
+  ポリシー_フィルタ {
+    bool PIIマスク
+    bool NGワード
+    bool ドメイン制限
+  }
+  リクエスト ||--|| クエリ整形 : 入力を渡す
+  リクエスト ||--|| ポリシー_フィルタ : 事前チェック
+  クエリ整形 ||--|| トークナイザ : 形態処理参照
+  クエリ整形 ||--o{ 埋め込みモデル : 埋め込み生成依頼
+  埋め込みモデル ||--o{ ドキュメント : 事前埋め込み付与
+  ベクトルDB }o--o{ ドキュメント : チャンク保持
+  クエリ整形 ||--o{ ベクトルDB : 近傍検索要求
+  ベクトルDB ||--o{ 再ランク_BERT_MMR : Top_k候補を提供
+  再ランク_BERT_MMR ||--|| BERT : CrossEncoder基盤
+  再ランク_BERT_MMR ||--o{ 圧縮器_Contextual : 上位Nを送る
+  圧縮器_Contextual ||--|| プロンプト : 文脈を生成
+  クエリ整形 ||--|| プロンプト : 質問を提供
+  プロンプト ||--o{ LLM : 推論依頼
+  LLM ||--|| レスポンス : 応答生成
+  リクエスト ||--|| レスポンス : 入出力対応
+  クエリ整形 }o--|| キャッシュ : 参照
+  ベクトルDB }o--|| キャッシュ : 参照
+  LLM }o--|| キャッシュ : 参照
+  リクエスト ||--o{ ログ : 記録
+  ベクトルDB ||--o{ ログ : 記録
+  再ランク_BERT_MMR ||--o{ ログ : 記録
+  圧縮器_Contextual ||--o{ ログ : 記録
+  LLM ||--o{ ログ : 記録
+  レスポンス ||--o{ 監視_評価 : メトリクス更新
