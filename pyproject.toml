@@ -1,0 +1,33 @@
+[tool.uv]
+package = true  # 明示（既定は true だが明文化しておくと安心なので）
+link-mode = "copy"
+
+[project]
+name = "rag_vino"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "faiss-cpu>=1.12.0",
+    "langchain>=0.2",
+    "langchain-community>=0.2",
+    "langchain-huggingface>=0.0.3",
+    "llama-cpp-python>=0.3.2",
+    "optimum[nncf,openvino]>=1.25",
+    "pymupdf>=1.26.4",
+    "sentence-transformers>=5.1.1",
+    "streamlit>=1.50.0",
+    "torch>=2.8.0",
+    "transformers>=4.41",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# optimum内でopsetが重複してるらしきライブラリ性のワーニングを除去
+[tool.pytest.ini_options]
+filterwarnings = [
+  # メッセージで絞り込み、カテゴリは基底の Warning、モジュールも限定
+  "ignore:.*scaled_dot_product_attention.*:Warning:torch.onnx._internal.registration.*",
+]

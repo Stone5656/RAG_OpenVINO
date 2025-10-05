@@ -1,0 +1,45 @@
+/* 
+UI 共通スタイル
+- Streamlit 標準の見た目を軽く整えるだけの最小限 CSS
+- アプリ本体ロジックに依存しません
+*/
+
+.stChatMessage {
+  border-radius: 10px;
+  padding: 1rem;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.stButton > button {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  transition: all 0.2s ease-in-out;
+}
+
+.stButton > button:hover {
+  border-color: #4A90E2;
+  color: #4A90E2;
+}
+
+/* プライマリボタン風 */
+.stButton > button[kind="primary"] {
+  background-color: #4A90E2;
+  color: white;
+}
+
+/* サイドバー（ダーク） */
+[data-testid="stSidebar"] {
+  background-color: #1E1E1E;
+}
+[data-testid="stSidebar"] * {
+  color: #FAFAFA;
+}
+
+/* 参照ソース用の箱 */
+.source-container {
+  border: 1px solid #E0E0E0;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-top: 1rem;
+  background-color: #FAFAFA;
+}

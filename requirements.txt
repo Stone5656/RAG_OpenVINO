@@ -1,0 +1,15 @@
+streamlit
+langchain
+langchain-community
+llama-cpp-python
+pymupdf
+faiss-cpu
+transformers
+torch
+sentence-transformers
+optimum[openvino,nncf]>=1.25
+transformers>=4.41
+langchain>=0.2
+langchain-community>=0.2
+langchain-huggingface>=0.0.3   # 新: HFパイプライン用
+openvino>=2024.4
