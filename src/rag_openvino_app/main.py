@@ -17,7 +17,7 @@ from transformers import AutoTokenizer
 import streamlit as st
 
 # === 層の import ===
-from app.pdf.rag.retrieval_chain_builder import build_retrieval_qa_chain
+from rag_openvino_app.pdf.rag.retrieval_chain_builder import build_retrieval_qa_chain
 from ui.sidebar import draw_sidebar, inject_base_style
 from ui.chat_window import (
     render_header,
@@ -60,7 +60,7 @@ ensure_defaults()
 def on_load_resources(model_ref: str, pdf_names: list[str]) -> None:
     """
     モデルとPDFを読み込み、RAGチェーンを作成して session_state に保存。
-    - 既存 app.py の load_resources() 相当だが、pathlib化＆層分離版。
+    - 既存 rag_openvino_app.py の load_resources() 相当だが、pathlib化＆層分離版。
     """
     # 1) 参照をローカルorIDに正規化
     ref = model_ref.strip()

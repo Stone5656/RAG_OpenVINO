@@ -3,7 +3,7 @@ package = true  # 明示（既定は true だが明文化しておくと安心�
 link-mode = "copy"
 
 [project]
-name = "rag_vino"
+name = "rag_openvino_app"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -16,6 +16,7 @@ dependencies = [
     "llama-cpp-python>=0.3.2",
     "optimum[nncf,openvino]>=1.25",
     "pymupdf>=1.26.4",
+    "python-dotenv>=1.1.1",
     "sentence-transformers>=5.1.1",
     "streamlit>=1.50.0",
     "torch>=2.8.0",

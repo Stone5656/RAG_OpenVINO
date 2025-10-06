@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.13'",
@@ -2786,7 +2786,7 @@ wheels = [
 ]
 
 [[package]]
-name = "rag-vino"
+name = "rag-openvino-app"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
@@ -2797,6 +2797,7 @@ dependencies = [
     { name = "llama-cpp-python" },
     { name = "optimum", extra = ["nncf", "openvino"] },
     { name = "pymupdf" },
+    { name = "python-dotenv" },
     { name = "sentence-transformers" },
     { name = "streamlit" },
     { name = "torch" },
@@ -2812,6 +2813,7 @@ requires-dist = [
     { name = "llama-cpp-python", specifier = ">=0.3.2" },
     { name = "optimum", extras = ["nncf", "openvino"], specifier = ">=1.25" },
     { name = "pymupdf", specifier = ">=1.26.4" },
+    { name = "python-dotenv", specifier = ">=1.1.1" },
     { name = "sentence-transformers", specifier = ">=5.1.1" },
     { name = "streamlit", specifier = ">=1.50.0" },
     { name = "torch", specifier = ">=2.8.0" },
