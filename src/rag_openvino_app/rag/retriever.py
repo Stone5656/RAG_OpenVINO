@@ -89,13 +89,21 @@ class Retriever:
         return picked_docs
 
     @with_logger("RAG-OpenVINO-APP", env_log_path="LOG_FILE_PATH", env_log_level="LOG_LEVEL")
-    def retrieve(self, question: str, *, logger=None) -> list[dict[str, object]]:
+    def retrieve(
+        self,
+        question: str,
+        *,
+        top_k: int | None = None,   # ← 追加：呼び出し側の一時的な上書き用
+        logger=None,
+    ) -> list[dict[str, object]]:
         """質問文から Top-k（＋MMR）文書を取得。"""
+        k = int(top_k) if top_k is not None else int(self.cfg.k)
+
         logger.debug("Retriever: embedding query...")
         q_vec = self.embed_model.embed([question])[0]  # (d,)
 
-        logger.debug("Retriever: vector DB similarity search (k=%d)", self.cfg.k)
-        candidates = self.vector_store.similarity_search(q_vec, self.cfg.k)
+        logger.debug("Retriever: vector DB similarity search (k=%d)", k)
+        candidates = self.vector_store.similarity_search(q_vec, k)
         logger.debug("Retriever: got %d candidates", len(candidates))
 
         need_embed = [i for i, c in enumerate(candidates) if "embedding" not in c or c["embedding"] is None]
