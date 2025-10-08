@@ -14,6 +14,7 @@ Conversation Manager
 from __future__ import annotations
 import time
 import re
+from rag_openvino_app.rag.prompts import SYSTEM_PROMPT
 from rag_openvino_app.utils.logger_utils import with_logger
 from rag_openvino_app.rag.retriever import Retriever
 from rag_openvino_app.rag.reranker import Reranker
@@ -46,19 +47,21 @@ class ConversationManager:
         prompt = self._build_prompt(query, compressed)
         raw = self.llm.generate(prompt, temperature=temperature)
 
-        # ★ ここでテンプレ混入を除去（簡易）
+        # 既存のテンプレ除去
         answer = self._strip_prompt_echo(raw)
+        # ★ 最小の網（必要に応じてオン）
+        answer = self._postprocess_bullets(answer, max_lines=6)
+
         elapsed = time.time() - t0
         logger.debug("Conversation: 完了（%.3f 秒）", elapsed)
         return {"answer": answer, "contexts": compressed, "elapsed": elapsed}
 
     @with_logger("RAG-OpenVINO-APP", env_log_path="LOG_FILE_PATH", env_log_level="LOG_LEVEL")
     def _build_prompt(self, query: str, contexts: list[str] | list[dict], *, logger=None) -> str:
-        chunks = []
-        for c in contexts:
-            chunks.append(c if isinstance(c, str) else c.get("text", ""))
-        joined = "\n\n".join(chunks)
-        return f"以下の文脈に基づいて質問に答えてください。\n\n--- 文脈 ---\n{joined}\n\n--- 質問 ---\n{query}\n\n--- 回答 ---"
+        # OpenVINO 側が system/user を明確に切れない場合は、先頭に System、続けて User を連結
+        user = build_user_prompt(query, contexts)
+        prompt = f"{SYSTEM_PROMPT}\n\n{user}\n"
+        return prompt
 
     def _strip_prompt_echo(self, text: str) -> str:
         if not text:
@@ -71,3 +74,45 @@ class ConversationManager:
         # 3) ラベルや接頭辞の削除（デモ用のダミーラベルを剥がす）
         s = re.sub(r"^\[OpenVINO 出力\]\s*\([^)]+\)\s*→\s*", "", s).strip()
         return s
+    
+    # conversation/manager.py の _strip_prompt_echo() の直後に追加関数を置いて使う
+    def _postprocess_bullets(answer: str, max_lines: int = 6) -> str:
+        """
+        - 先頭の「【回答】」以降だけを残す
+        - 同一行の重複を除去（順序保持）
+        - 行数を最大 max_lines にカット
+        - 末尾の評価系・ノイズ行をヒューリスティックに除去
+        """
+        if not answer:
+            return ""
+
+        # 1) 「【回答】」以降
+        if "【回答】" in answer:
+            answer = answer.split("【回答】", 1)[-1].strip()
+
+        # 2) 行ごとの重複除去（順序保持）
+        seen = set()
+        lines_out = []
+        for raw in answer.splitlines():
+            line = raw.strip()
+            if not line:
+                continue
+            # 評価系ノイズの簡易フィルタ
+            if "この回答は文脈に基づいていますか" in line:
+                continue
+            if line not in seen:
+                seen.add(line)
+                lines_out.append(line)
+
+        # 3) 先頭が「- 」でなければ整形（プロンプト逸脱の保険）
+        normed = []
+        for l in lines_out:
+            if not l.startswith("- "):
+                normed.append(f"- {l}")
+            else:
+                normed.append(l)
+
+        # 4) 上限行数でカット
+        normed = normed[:max_lines]
+        return "\n".join(normed).strip()
+
