@@ -14,4 +14,4 @@ faiss_index/*
 conversations/*
 models/*
 logs/*
-
+indexes/*
