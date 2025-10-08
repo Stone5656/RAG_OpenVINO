@@ -13,3 +13,5 @@ faiss_index_cache/*
 faiss_index/*
 conversations/*
 models/*
+logs/*
+
