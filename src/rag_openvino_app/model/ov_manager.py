@@ -111,23 +111,30 @@ class OVManager(BaseModelManager):
     def generate(self, prompt: str, *, logger=None, **kwargs) -> str:
         """
         実際に生成を行う。
-        kwargs: temperature, max_new_tokens, top_p, top_k など任意
+        kwargs: temperature, max_new_tokens, top_p, top_k, repetition_penalty, no_repeat_ngram_size など任意
+        重要: 出力は「生成分のみ」（= 入力プロンプトのエコーを除去）を返す。
         """
+        import time
         t0 = time.time()
-        max_new_tokens = int(kwargs.get("max_new_tokens", self.config["max_new_tokens"]))
-        temperature = float(kwargs.get("temperature", self.config["temperature"]))
-        top_p = float(kwargs.get("top_p", 0.95))
-        top_k = int(kwargs.get("top_k", 50))
+
+        # ---- 生成ハイパラ（kwargs優先 / 既定は config）----
+        max_new_tokens = int(kwargs.get("max_new_tokens", self.config.get("max_new_tokens", 512)))
+        temperature     = float(kwargs.get("temperature",     self.config.get("temperature", 0.2)))
+        top_p           = float(kwargs.get("top_p",           self.config.get("top_p", 0.9)))
+        top_k           = int(kwargs.get("top_k",             self.config.get("top_k", 50)))
+        repetition_penalty   = float(kwargs.get("repetition_penalty",   self.config.get("repetition_penalty", 1.15)))
+        no_repeat_ngram_size = int(kwargs.get("no_repeat_ngram_size",   self.config.get("no_repeat_ngram_size", 6)))
         do_sample = bool(kwargs.get("do_sample", temperature > 0.0))
 
-        # トークナイズ
+        # ---- トークナイズ（注意: 入力長を後で使う）----
         inputs = self.tokenizer(prompt, return_tensors="pt")
-        # pad 対策
         if "attention_mask" not in inputs:
             from torch import ones_like
             inputs["attention_mask"] = ones_like(inputs["input_ids"])
 
-        # 生成
+        input_len = int(inputs["input_ids"].shape[1])
+
+        # ---- 生成（入力+生成の連結トークン列が返る想定）----
         outputs = self.model.generate(
             **inputs,
             max_new_tokens=max_new_tokens,
@@ -135,11 +142,40 @@ class OVManager(BaseModelManager):
             temperature=temperature,
             top_p=top_p,
             top_k=top_k,
+            repetition_penalty=repetition_penalty,
+            no_repeat_ngram_size=no_repeat_ngram_size,
             pad_token_id=self.tokenizer.pad_token_id,
             eos_token_id=self.tokenizer.eos_token_id,
+            # return_dict_in_generate=False の場合、Tensor で返る（既定）
         )
-        text = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)[0]
+
+        # ---- 「生成分のみ」を取り出してデコード ----
+        # outputs: [batch=1, input_len + gen_len]
+        try:
+            gen_ids = outputs[:, input_len:]              # ★ ここが肝（入力ぶんをスライス）
+        except Exception:
+            # 万一 generate の戻りが辞書の場合にも対応
+            seq = outputs.sequences if hasattr(outputs, "sequences") else outputs
+            gen_ids = seq[:, input_len:]
+        text = self.tokenizer.batch_decode(gen_ids, skip_special_tokens=True)[0].strip()
+
+        # ---- 念のための保険（正規化して前方一致でプロンプトを剥がす）----
+        # 生成器によっては tokenization の都合で数トークンだけ先頭に残ることがあるため
+        def _norm(s: str) -> str:
+            return " ".join(s.replace("\u3000", " ").split())
+        try:
+            if _norm(text).startswith(_norm(prompt)):
+                text = text[len(prompt):].lstrip()
+        except Exception:
+            pass
 
         elapsed = time.time() - t0
-        logger.debug("OVManager.generate: 生成完了（%.3f 秒, max_new_tokens=%d, temp=%.2f）", elapsed, max_new_tokens, temperature)
+        # 追加のデバッグ情報（入力長・生成長・総長）
+        total_len = int(gen_ids.shape[1] + input_len) if hasattr(gen_ids, "shape") else None
+        logger.debug(
+            "OVManager.generate: 生成完了（%.3f 秒, max_new_tokens=%d, temp=%.2f, "
+            "rep=%.2f, ngram=%d, in_tokens=%d, gen_tokens≈%s, total_tokens≈%s）",
+            elapsed, max_new_tokens, temperature, repetition_penalty, no_repeat_ngram_size,
+            input_len, getattr(gen_ids, 'shape', ['?','?'])[-1], total_len
+        )
         return text

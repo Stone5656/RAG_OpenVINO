@@ -37,3 +37,19 @@ USER_PROMPT_TEMPLATE = """以下のコンテキストを根拠として質問に
 - コンテキストに無い情報は書かない
 - 質問の再掲はしない
 """
+
+def build_user_prompt(question: str, contexts: list[str] | list[dict]) -> str:
+    """
+    文脈リストから USER_PROMPT_TEMPLATE を整形。
+    dict の場合は 'text' を優先。空要素は除外。
+    """
+    parts: list[str] = []
+    for c in contexts:
+        if isinstance(c, str):
+            t = c.strip()
+        else:
+            t = (c.get("text") or "").strip()
+        if t:
+            parts.append(t)
+    context = "\n\n---\n\n".join(parts)
+    return USER_PROMPT_TEMPLATE.format(question=question.strip(), context=context)
