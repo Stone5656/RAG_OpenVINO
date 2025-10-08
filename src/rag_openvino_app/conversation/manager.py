@@ -13,29 +13,18 @@ Conversation Manager
 """
 from __future__ import annotations
 import time
-
-from rag_openvino_app.utils.logger_utils import with_logger  # ★ get_logger は使わない
-
-# 想定: rag モジュール群が存在する（retriever, reranker, compressor）
+import re
+from rag_openvino_app.utils.logger_utils import with_logger
 from rag_openvino_app.rag.retriever import Retriever
 from rag_openvino_app.rag.reranker import Reranker
 from rag_openvino_app.rag.compressor import Compressor
 from rag_openvino_app.model import get_model_manager
 
+PROMPT_HEADER_RE = re.compile(r"^以[下後]の文脈に基づいて質問に答えてください。.*?--- 質問 ---\s*.*?$", re.S)
 
 class ConversationManager:
-    """RAG + LLM をまとめて実行する統括クラス。"""
-
     @with_logger("RAG-OpenVINO-APP", env_log_path="LOG_FILE_PATH", env_log_level="LOG_LEVEL")
-    def __init__(
-        self,
-        retriever: Retriever,
-        reranker: Reranker,
-        compressor: Compressor,
-        model_cfg: dict[str, object],
-        *,
-        logger=None,
-    ):
+    def __init__(self, retriever: Retriever, reranker: Reranker, compressor: Compressor, model_cfg: dict, *, logger=None):
         self.retriever = retriever
         self.reranker = reranker
         self.compressor = compressor
@@ -43,49 +32,42 @@ class ConversationManager:
         logger.debug("ConversationManager 初期化完了。モデル=%s", model_cfg.get("type"))
 
     @with_logger("RAG-OpenVINO-APP", env_log_path="LOG_FILE_PATH", env_log_level="LOG_LEVEL")
-    def run_pipeline(
-        self,
-        query: str,
-        *,
-        max_chunks: int = 8,
-        temperature: float = 0.2,
-        logger=None,
-    ) -> dict[str, object]:
-        """質問クエリを受け取り、RAG で応答を生成する。"""
+    def run_pipeline(self, query: str, *, max_chunks: int = 8, temperature: float = 0.2, logger=None) -> dict:
         t0 = time.time()
         logger.debug("Conversation: パイプライン開始。query='%s'", query)
 
-        # --- ステップ1: 検索 ---
         retrieved = self.retriever.retrieve(query, top_k=max_chunks)
         logger.debug("Conversation: 検索完了（%d 件）", len(retrieved))
-
-        # --- ステップ2: 再ランク ---
         reranked = self.reranker.rerank(query, retrieved)
         logger.debug("Conversation: 再ランク完了（上位 %d 件）", len(reranked))
-
-        # --- ステップ3: 圧縮（要約・トークン削減）---
         compressed = self.compressor.compress(reranked)
-        logger.debug("Conversation: 圧縮完了（合計 %d 文字相当）", len("".join([c if isinstance(c, str) else c.get("text","") for c in compressed])))
+        logger.debug("Conversation: 圧縮完了（%d 件）", len(compressed))
 
-        # --- ステップ4: プロンプト生成 & 推論 ---
         prompt = self._build_prompt(query, compressed)
-        answer = self.llm.generate(prompt, temperature=temperature)
-        elapsed = time.time() - t0
+        raw = self.llm.generate(prompt, temperature=temperature)
 
+        # ★ ここでテンプレ混入を除去（簡易）
+        answer = self._strip_prompt_echo(raw)
+        elapsed = time.time() - t0
         logger.debug("Conversation: 完了（%.3f 秒）", elapsed)
         return {"answer": answer, "contexts": compressed, "elapsed": elapsed}
 
     @with_logger("RAG-OpenVINO-APP", env_log_path="LOG_FILE_PATH", env_log_level="LOG_LEVEL")
     def _build_prompt(self, query: str, contexts: list[str] | list[dict], *, logger=None) -> str:
-        """質問と文脈を結合して LLM に投げるプロンプトを構築。"""
-        # dict/str どちらでも対応
         chunks = []
         for c in contexts:
-            if isinstance(c, str):
-                chunks.append(c)
-            else:
-                chunks.append(c.get("text", ""))
+            chunks.append(c if isinstance(c, str) else c.get("text", ""))
         joined = "\n\n".join(chunks)
-        prompt = f"以下の文脈に基づいて質問に答えてください。\n\n--- 文脈 ---\n{joined}\n\n--- 質問 ---\n{query}"
-        logger.debug("Conversation: プロンプト構築完了（文字数 %d）", len(prompt))
-        return prompt
+        return f"以下の文脈に基づいて質問に答えてください。\n\n--- 文脈 ---\n{joined}\n\n--- 質問 ---\n{query}\n\n--- 回答 ---"
+
+    def _strip_prompt_echo(self, text: str) -> str:
+        if not text:
+            return ""
+        # 1) 「--- 回答 ---」以降を優先
+        if "--- 回答 ---" in text:
+            return text.split("--- 回答 ---", 1)[-1].strip()
+        # 2) 冒頭のテンプレヘッダを正規表現で削除
+        s = PROMPT_HEADER_RE.sub("", text).strip()
+        # 3) ラベルや接頭辞の削除（デモ用のダミーラベルを剥がす）
+        s = re.sub(r"^\[OpenVINO 出力\]\s*\([^)]+\)\s*→\s*", "", s).strip()
+        return s
