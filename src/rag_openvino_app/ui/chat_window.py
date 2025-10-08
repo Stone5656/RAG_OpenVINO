@@ -73,9 +73,21 @@ def render_chat(
         with st.spinner("検索と推論を実行中…"):
             try:
                 result = manager.run_pipeline(prompt, temperature=temperature)
-                answer = result.get("answer", "")
-                st.markdown(answer)
+                answer = (result or {}).get("answer", "") or "（応答なし：生成テキストが空でした）"
+                elapsed = float((result or {}).get("elapsed", 0.0))
 
+                # 応答を確実に描画
+                st.markdown(answer)
+                # 処理時間の表示
+                st.caption(f"⏱ {elapsed:.2f}s")
+
+                # 参照コンテキストを確認できるように
+                ctxs = (result or {}).get("contexts", [])
+                if ctxs:
+                    with st.expander("参照コンテキスト（RAG）"):
+                        for i, c in enumerate(ctxs, 1):
+                            st.markdown(f"**[{i}]** {c.get('meta', {}).get('source', '')}")
+                            st.write(c.get("text", ""))
                 session.add_message("assistant", answer)
                 logger.debug("UI: 応答を履歴に追加しました。")
             except Exception as e:
