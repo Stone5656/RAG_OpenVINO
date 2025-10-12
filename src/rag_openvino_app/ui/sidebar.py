@@ -6,11 +6,33 @@ Streamlit サイドバー
 """
 from __future__ import annotations
 import streamlit as st
-from typing import Dict, Tuple
+from typing import Dict, Tuple, List
+from pathlib import Path
 
 from rag_openvino_app.utils.logger_utils import with_logger
 from rag_openvino_app.utils.model_discovery import discover_model_ids
 from rag_openvino_app.constants.paths import INDEX_DIR, VDB_BASENAME
+
+
+# ---------------------------
+# 内部: PDF探索（再帰）
+# ---------------------------
+def _discover_pdfs(search_dirs: List[Path]) -> List[Path]:
+    pdfs: List[Path] = []
+    for base in search_dirs:
+        try:
+            if not base.exists():
+                continue
+            pdfs.extend(sorted(base.rglob("*.pdf")))
+        except Exception:
+            continue
+    uniq, seen = [], set()
+    for p in pdfs:
+        rp = p.resolve()
+        if rp not in seen:
+            uniq.append(rp)
+            seen.add(rp)
+    return uniq
 
 
 # ---------------------------
@@ -41,7 +63,6 @@ def render_model_section(
         key=f"{key_prefix}_device",
     )
 
-    # models/ の IR から ID を抽出
     discovered = discover_model_ids()
     model_choices = ["（models/ から選択）"] + discovered
     model_sel = st.selectbox(
@@ -51,7 +72,6 @@ def render_model_section(
         key=f"{key_prefix}_model_from_dir",
     )
 
-    # 手入力（プリセットは出さない）
     custom_model_id = st.text_input(
         "モデルID / IR パス（手入力・空なら上の選択を使用）",
         value="",
@@ -59,12 +79,8 @@ def render_model_section(
     )
     model_id = custom_model_id.strip() or ("" if model_sel == "（models/ から選択）" else model_sel)
 
-    temperature = st.slider(
-        "温度", 0.0, 1.0, default_temperature, 0.05, key=f"{key_prefix}_temp"
-    )
-    max_new_tokens = st.number_input(
-        "生成最大トークン", 1, 8192, default_max_new_tokens, 32, key=f"{key_prefix}_max_tokens"
-    )
+    temperature = st.slider("温度", 0.0, 1.0, default_temperature, 0.05, key=f"{key_prefix}_temp")
+    max_new_tokens = st.number_input("生成最大トークン", 1, 8192, default_max_new_tokens, 32, key=f"{key_prefix}_max_tokens")
 
     if not discovered:
         st.info("models/ 配下に IR(.xml) が見つかりません。HF のモデルIDを上の手入力欄に入れると自動取得します。")
@@ -81,7 +97,7 @@ def render_model_section(
 
 
 # ---------------------------
-# セクション: RAG 設定
+# セクション: RAG 設定（PDF選択付き）
 # ---------------------------
 @with_logger("RAG-OpenVINO-APP", env_log_path="LOG_FILE_PATH", env_log_level="LOG_LEVEL")
 def render_rag_section(
@@ -90,6 +106,7 @@ def render_rag_section(
     default_top_k: int = 12,
     default_top_n: int = 6,
     default_mmr_lambda: float = 0.4,
+    pdf_search_dirs: List[str] | None = None,
     logger=None,
 ) -> Dict[str, object]:
     st.subheader("RAG 設定")
@@ -98,17 +115,38 @@ def render_rag_section(
     top_n = st.number_input("上位N（再ランク後）", 1, int(top_k), default_top_n, 1, key=f"{key_prefix}_topn")
     mmr_lambda = st.slider("MMR λ（関連性↔多様性）", 0.0, 1.0, default_mmr_lambda, 0.05, key=f"{key_prefix}_mmr")
 
+    st.markdown("**コンテンツ選択（PDF）**")
+    _defaults = [Path("docs"), Path("data"), Path("datasets")]
+    search_dirs = [Path(p) for p in (pdf_search_dirs or [])] or _defaults
+    pdfs = _discover_pdfs(search_dirs)
+
+    if not pdfs:
+        st.info("PDFが見つかりませんでした。`docs/`, `data/`, `datasets/` などにPDFを配置してください。")
+        selected = []
+    else:
+        cwd = Path.cwd()
+        display_items = [str(p.relative_to(cwd)) if cwd in p.parents else str(p) for p in pdfs]
+        display_to_abs = {disp: str(abs_p) for disp, abs_p in zip(display_items, pdfs)}
+        chosen = st.multiselect(
+            "RAGに利用するPDF（複数選択可）",
+            options=display_items,
+            default=[],
+            key=f"{key_prefix}_pdfs",
+        )
+        selected = [display_to_abs[c] for c in chosen]
+
     cfg = {
         "top_k": int(top_k),
         "top_n": int(top_n),
         "mmr_lambda": float(mmr_lambda),
+        "pdf_paths": selected,
     }
     logger.debug("Sidebar(RAG)=%s", cfg)
     return cfg
 
 
 # ---------------------------
-# セクション: ベクトルインデックス設定
+# セクション: ベクトルインデックス設定（必要時のみ表示）
 # ---------------------------
 @with_logger("RAG-OpenVINO-APP", env_log_path="LOG_FILE_PATH", env_log_level="LOG_LEVEL")
 def render_index_section(
@@ -119,14 +157,9 @@ def render_index_section(
     logger=None,
 ) -> Dict[str, object]:
     st.subheader("ベクトルインデックス")
-
     index_dir = st.text_input("保存ディレクトリ", value=default_index_dir, key=f"{key_prefix}_index_dir")
     index_name = st.text_input("ベース名（拡張子不要）", value=default_index_name, key=f"{key_prefix}_index_name")
-
-    cfg = {
-        "index_dir": index_dir,
-        "index_name": index_name,
-    }
+    cfg = {"index_dir": index_dir, "index_name": index_name}
     logger.debug("Sidebar(Index)=%s", cfg)
     return cfg
 
@@ -137,7 +170,7 @@ def render_index_section(
 @with_logger("RAG-OpenVINO-APP", env_log_path="LOG_FILE_PATH", env_log_level="LOG_LEVEL")
 def render_sidebar(
     *,
-    key_prefix: str,  # ← 呼び出し側で必ずユニークに（例: "main_sidebar"）
+    key_prefix: str,
     default_model_type: str = "ov",
     default_device: str = "AUTO:GPU,CPU",
     default_temperature: float = 0.2,
@@ -145,8 +178,12 @@ def render_sidebar(
     default_top_k: int = 12,
     default_top_n: int = 6,
     default_mmr_lambda: float = 0.4,
+    show_vector_index: bool = False,
+    pdf_search_dirs: list[str] | None = None,
+    default_index_dir: str = str(INDEX_DIR),
+    default_index_name: str = VDB_BASENAME,
     logger=None,
-) -> Tuple[Dict[str, object], Dict[str, object], Dict[str, object]]:
+) -> tuple[dict, dict, dict]:
     with st.sidebar:
         st.header("設定")
 
@@ -163,11 +200,14 @@ def render_sidebar(
             default_top_k=default_top_k,
             default_top_n=default_top_n,
             default_mmr_lambda=default_mmr_lambda,
+            pdf_search_dirs=pdf_search_dirs,
         )
 
-        index_cfg = render_index_section(
-            key_prefix=f'{key_prefix}_index',
-        )
+        if show_vector_index:
+            index_cfg = render_index_section(key_prefix=f'{key_prefix}_index')
+            st.caption("※ ベクトルインデックスの詳細設定は開発者向けです。")
+        else:
+            index_cfg = {"index_dir": default_index_dir, "index_name": default_index_name}
 
         st.caption("※ 変更は即時反映。必要に応じて manager を再構築してください。")
 
